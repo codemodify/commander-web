@@ -1,0 +1,25 @@
+[Unit]
+Description=commander-web — browser renderer for commanderd
+Documentation=https://github.com/codemodify/commander-web
+After=network.target commanderd.service
+Wants=network.target
+
+[Service]
+Type=simple
+
+# Replace `__USER_HERE__` + `__GROUP_HERE__` with the OS user the web server should run as.
+User=__USER_HERE__
+Group=__GROUP_HERE__
+
+# --bind   listen address for the web UI (browser hits this).
+# --daemon address of the commanderd to proxy. Use 127.0.0.1:50000 if it
+#          runs on the same host, or e.g. 192.168.1.10:50000 for remote.
+ExecStart=/usr/local/bin/commander-web --bind 127.0.0.1:50001 --daemon 127.0.0.1:50000
+Restart=on-failure
+RestartSec=2
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

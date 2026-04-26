@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>commander</title>
+  <style>
+    /* Mononoki, bundled via //go:embed all:frontend. woff2 only — every
+       browser commander cares about has supported it for years. */
+    @font-face {
+      font-family: "Mononoki";
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url("/fonts/mononoki-Regular.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "Mononoki";
+      font-style: italic;
+      font-weight: 400;
+      font-display: swap;
+      src: url("/fonts/mononoki-Italic.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "Mononoki";
+      font-style: normal;
+      font-weight: 700;
+      font-display: swap;
+      src: url("/fonts/mononoki-Bold.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "Mononoki";
+      font-style: italic;
+      font-weight: 700;
+      font-display: swap;
+      src: url("/fonts/mononoki-BoldItalic.woff2") format("woff2");
+    }
+
+    /* Palette — every theme overrides only the variables; no hex literals
+       should ever appear outside of these blocks. */
+    :root { /* dark (default) */
+      color-scheme: dark;
+      --bg: #1a1c20;
+      --panel: #232630;
+      --panel-active: #2d3140;
+      --fg: #d6dae0;
+      --fg-dim: #8a90a0;
+      --accent: #6ca6ff;
+      --on-accent: #000;
+      --row-hover: #2c3040;
+      --row-selected: #2f4a7d;
+      --header-bg: #15171d;
+      --tab-bar-bg: #1b1d25;
+      --tab-bg: #2a2d38;
+      --input-bg: #15171d;
+      --input-bg-focus: #1e2029;
+      --border: #000;
+      --border-subtle: #000;
+      --shadow: rgba(0,0,0,0.4);
+      --hot: #ff8c1a;
+      --on-hot: #1a0f00;
+    }
+    body[data-theme="light"] {
+      color-scheme: light;
+      --bg: #f5f5f5;
+      --panel: #ececec;
+      --panel-active: #dcdcdc;
+      --fg: #222;
+      --fg-dim: #666;
+      --accent: #1964d0;
+      --on-accent: #fff;
+      --row-hover: #e2e8ef;
+      --row-selected: #cfe1f7;
+      --header-bg: #e6e6e6;
+      --tab-bar-bg: #dcdcdc;
+      --tab-bg: #f0f0f0;
+      --input-bg: #fff;
+      --input-bg-focus: #fff;
+      --border: #bbb;
+      --border-subtle: #ccc;
+      --shadow: rgba(0,0,0,0.15);
+      --hot: #ff8c1a;
+      --on-hot: #1a0f00;
+    }
+    body[data-theme="high-contrast-dark"] {
+      color-scheme: dark;
+      --bg: #000;
+      --panel: #000;
+      --panel-active: #222;
+      --fg: #fff;
+      --fg-dim: #ccc;
+      --accent: #ffff00;
+      --on-accent: #000;
+      --row-hover: #222;
+      --row-selected: #ffff00;
+      --header-bg: #000;
+      --tab-bar-bg: #000;
+      --tab-bg: #222;
+      --input-bg: #000;
+      --input-bg-focus: #222;
+      --border: #fff;
+      --border-subtle: #fff;
+      --shadow: rgba(0,0,0,0.8);
+      --hot: #ff8c00;
+      --on-hot: #000;
+    }
+    body[data-theme="high-contrast-light"] {
+      color-scheme: light;
+      --bg: #fff;
+      --panel: #fff;
+      --panel-active: #eaeaea;
+      --fg: #000;
+      --fg-dim: #222;
+      --accent: #0000cc;
+      --on-accent: #fff;
+      --row-hover: #eaeaea;
+      --row-selected: #0000cc;
+      --header-bg: #fff;
+      --tab-bar-bg: #fff;
+      --tab-bg: #eaeaea;
+      --input-bg: #fff;
+      --input-bg-focus: #eaeaea;
+      --border: #000;
+      --border-subtle: #000;
+      --shadow: rgba(0,0,0,0.2);
+      --hot: #ff8c00;
+      --on-hot: #000;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; width: 100%; font-family: "Mononoki", ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; color: var(--fg); background: var(--bg); }
+    body { display: flex; flex-direction: column; }
+    header, footer { padding: 4px 10px; background: var(--header-bg); border-bottom: 1px solid var(--border); }
+    footer { border-bottom: none; border-top: 1px solid var(--border); color: var(--fg-dim); }
+    footer b { color: var(--fg); }
+    #status-dot { flex: 0 0 auto; width: 12px; height: 12px; border-radius: 50%; background: var(--fg-dim); border: 1px solid var(--border); transition: background 0.15s; }
+    #status-dot[data-state="connected"]    { background: #31c048; }
+    #status-dot[data-state="disconnected"] { background: #d13838; }
+    .footer-spacer { flex: 1 1 auto; }
+    .ops-progress { color: var(--fg-dim); font-size: 11px; flex: 0 0 auto; white-space: nowrap; padding: 0 6px; display: inline-flex; align-items: center; gap: 4px; }
+    .ops-progress svg.glyph { width: 12px; height: 12px; flex: 0 0 auto; }
+    main { flex: 1; display: flex; min-height: 0; }
+    .pane { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--border); min-width: 0; background: var(--bg); position: relative; }
+    .pane:last-child { border-right: none; }
+    /* Active pane: paint the tab-row in the same color used for the
+       file-list cursor row (--row-selected), so the pane's "focus
+       color" is consistent across the whole pane. Tabs + content
+       inside stay readable at their usual colors. */
+    .pane.active { background: var(--panel-active); }
+    .pane.active .tab-row { background: var(--row-selected); }
+    .path-row { display: flex; align-items: stretch; background: var(--tab-bar-bg); border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); gap: 2px; padding: 2px 4px 2px 2px; }
+    .path-row .nav { background: transparent; color: var(--fg); border: 1px solid transparent; border-radius: 3px; padding: 4px; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; }
+    .glyph { width: 16px; height: 16px; display: block; fill: currentColor; }
+    .path-row .nav:hover:not([disabled]) { background: var(--panel-active); border-color: var(--border-subtle); }
+    .path-row .nav[disabled] { opacity: 0.35; cursor: default; }
+    /* Class-based inactive state so the button still dispatches
+       pointerdown / contextmenu (required for the long-press history
+       menu). Click is gated in JS instead of by the disabled attr. */
+    .path-row .nav.nav-inactive { opacity: 0.35; cursor: default; }
+    /* Full cwd is always visible via horizontal scroll — but the
+       scrollbar is hidden since the path row is tight. Scrolling still
+       works via text selection drag-to-edge and programmatic scroll. */
+    .pane-header { flex: 1; padding: 4px 10px; background: transparent; border-bottom: none; font-weight: bold; overflow-x: auto; overflow-y: hidden; white-space: nowrap; color: var(--fg); align-self: center; min-width: 0; scrollbar-width: none; }
+    .pane-header::-webkit-scrollbar { display: none; }
+    /* Tab row: tabs sit on top of the pane content. The strip has the
+       darker --tab-bar-bg color. No bottom border — the active tab's
+       flat bottom merges seamlessly into the content below. */
+    .tab-row { display: flex; align-items: flex-end; background: var(--tab-bar-bg); padding: 2px 4px 0 4px; min-height: 32px; }
+    /* Tabs overlap by 6px (slightly less than the 10px slope width) so
+       adjacent slopes interleave without fully covering each other —
+       the darker drop-shadow outlines meet in a soft V between tabs. */
+    /* .tabs stretches to the full tab-row height (align-self: stretch
+       overrides the parent's align-items: flex-end just for this
+       container) so the close button — which straddles the top of each
+       tab — has room inside .tabs without needing overflow tricks. The
+       actual tab elements still flex-end inside .tabs to keep them
+       pinned to the bottom of the toolbar. */
+    /* overflow-x: auto so wheel-scroll / drag can actually move
+       through hidden tabs (scrollLeft only works on a real scroll
+       container). Per CSS spec this forces overflow-y to clip too,
+       so the close button's vertical overhang is clipped to the
+       strip — acceptable trade compared to losing horizontal scroll.
+       The scrollbar itself is hidden (Firefox: scrollbar-width: none;
+       WebKit: ::-webkit-scrollbar display:none) — wheel + drag still
+       work, the chrome just doesn't paint. */
+    .tabs { display: flex; align-self: stretch; align-items: flex-end; flex: 1; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; min-width: 0; padding-left: 4px; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tabs::-webkit-scrollbar { height: 6px; }
+    .tabs::-webkit-scrollbar-thumb { background: var(--panel-active); border-radius: 3px; }
+    /* Trapezoid silhouette rendered with two pseudo-elements:
+         ::after  (z-index -2) is the border — 1px larger trapezoid in
+                  --fg-dim, sits behind everything.
+         ::before (z-index -1) is the body — same shape at normal size in
+                  --tab-bg, covers the interior of the border.
+       The 1px peek around the border's edge is the visible outline,
+       which follows the slope angles faithfully (real CSS `border` on a
+       clip-path'd element can't do that, and `filter: drop-shadow` gets
+       clipped by the parent's overflow). */
+    .tab {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      /* Symmetric vertical padding + align-items:center keeps the icon
+         + label vertically centered in the tab. Tighter left padding
+         (8px) tucks the icon in toward the slope; right stays wider to
+         leave room for the close button floating in the top-right. */
+      padding: 3px 14px 3px 8px;
+      box-sizing: border-box;
+      height: 22px;
+      color: var(--fg);
+      font-size: 12px;
+      cursor: default;
+      user-select: none;
+      position: relative;
+      isolation: isolate;
+      background: transparent;
+    }
+    .tab::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: var(--tab-bg);
+      clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 100%, 0 100%);
+      z-index: -1;
+      pointer-events: none;
+    }
+    .tab::after {
+      content: "";
+      position: absolute;
+      inset: -1px;
+      background: var(--fg-dim);
+      clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 100%, 0 100%);
+      z-index: -2;
+      pointer-events: none;
+    }
+    .tab + .tab { margin-left: -6px; }
+    /* All tabs share the same height now; the active tab is
+       distinguished by the accent strip + body color, not by size. */
+    .tab:not(.active):hover::before { background: var(--panel-active); }
+    .tab.active {
+      color: var(--fg);
+      z-index: 2;
+      font-weight: 600;
+    }
+    /* Thin top strip: inactive tabs rely on the 1px gray ::after
+       outline alone (no added inset shadow); active tabs carry a 2px
+       accent strip tucked inside the flat top of the trapezoid. */
+    .tab.active::before {
+      background: var(--bg);
+      box-shadow: inset 0 2px 0 0 var(--accent);
+    }
+    /* Pinned tabs inherit the symmetric 10/10 tab padding — the close ×
+       that normally floats over the right gutter isn't rendered, but
+       the label still has matching breathing room on both sides. */
+    .tab .label { cursor: default; }
+    .tab.pinned .label { font-style: italic; }
+    /* Site/folder glyph next to the label — always visible. */
+    .tab .tab-icon { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; flex: 0 0 auto; color: var(--fg-dim); }
+    .tab.active .tab-icon { color: var(--accent); }
+    .tab .tab-icon svg { width: 14px; height: 14px; }
+    /* Close button straddles the top-right corner of the trapezoid — its
+       center lands exactly where the flat top meets the down-slope
+       (x = width-10, y = 0). translate(50%, -50%) does the math. The
+       top-half overhang is visible because .tabs uses overflow: clip +
+       overflow-clip-margin-top rather than overflow: hidden. */
+    .tab .close { position: absolute; top: 0; right: 10px; transform: translate(50%, -50%); z-index: 3; display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: var(--hot); color: var(--on-hot); opacity: 0; pointer-events: none; transition: opacity 0.12s; }
+    .tab:hover .close { opacity: 1; pointer-events: auto; }
+    .tab .close svg { width: 12px; height: 12px; }
+    /* Pinned indicator: the 📌 emoji rendered at tab font size. Not
+       interactive — toggling is done via the context menu. Emoji keeps
+       its system color so the pushpin reads as yellow/red instead of
+       the theme foreground. */
+    .tab .pin-ind { display: inline-flex; align-items: center; justify-content: center; line-height: 1; font-size: 12px; flex: 0 0 auto; pointer-events: none; }
+    /* Activity dot: lit on inactive terminal tabs when the background
+       shell produced output the user hasn't read yet. */
+    .tab .tab-unread { width: 6px; height: 6px; border-radius: 50%; background: var(--hot); flex: 0 0 auto; margin-left: 2px; pointer-events: none; }
+    /* New-tab / Bookmarks / Connections — identical sizing to the path-row
+       nav buttons (.nav) so the whole chrome row aligns on a single grid. */
+    .new-tab-btn, .bookmarks-btn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 4px; background: transparent; color: var(--fg); border: 1px solid transparent; border-radius: 3px; margin-bottom: 1px; }
+    .new-tab-btn[hidden], .bookmarks-btn[hidden] { display: none !important; }
+    .new-tab-btn:hover, .bookmarks-btn:hover { background: var(--panel-active); border-color: var(--border-subtle); color: var(--fg); }
+    #ctx-menu { position: fixed; z-index: 100; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 4px 12px var(--shadow); padding: 4px 0; min-width: 160px; display: none; color: var(--fg); }
+    #ctx-menu .item { display: flex; align-items: center; gap: 8px; padding: 4px 12px; font-size: 12px; color: var(--fg); user-select: none; white-space: nowrap; }
+    #ctx-menu .item svg.glyph { width: 14px; height: 14px; flex: 0 0 auto; color: currentColor; }
+    #ctx-menu .item .glyph-placeholder { width: 14px; height: 14px; flex: 0 0 auto; }
+    #ctx-menu .item .glyph-emoji { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; font-size: 12px; line-height: 1; flex: 0 0 auto; }
+    #ctx-menu .item:hover { background: var(--accent); color: var(--on-accent); }
+    #ctx-menu .item.disabled { opacity: 0.4; cursor: default; }
+    #ctx-menu .item.disabled:hover { background: transparent; color: var(--fg); }
+    /* .inert rows: label is informational, not clickable (action lives
+       in the rightAction button). Same cursor/no-hover as disabled but
+       without the opacity dim so the text is still easy to read. */
+    #ctx-menu .item.inert { cursor: default; }
+    #ctx-menu .item.inert:hover { background: transparent; color: var(--fg); }
+    #ctx-menu .ctx-sep { height: 1px; background: var(--border-subtle); margin: 4px 0; }
+    #ctx-menu .item.has-children .submenu-caret { margin-left: auto; display: inline-flex; width: 12px; height: 12px; opacity: 0.8; }
+    #ctx-menu .item.has-children .submenu-caret svg { width: 12px; height: 12px; }
+    #ctx-menu .item.has-children { padding-right: 8px; }
+    #ctx-menu .ctx-right-action { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 2px; opacity: 0.85; }
+    #ctx-menu .ctx-right-action-extra { margin-left: 4px; }
+    #ctx-menu .ctx-right-action .ctx-ra-label { font-size: 11px; font-weight: 600; letter-spacing: 0.3px; }
+    #ctx-menu .ctx-right-action-green { color: #2ea043; opacity: 1; }
+    #ctx-menu .ctx-right-action-green:hover { background: #2ea043; color: #fff; }
+    #ctx-menu .item.has-right-action { padding-right: 6px; }
+    #ctx-menu .ctx-right-action svg { width: 12px; height: 12px; }
+    #ctx-menu .ctx-right-action:hover { background: var(--hot); color: var(--on-hot); opacity: 1; }
+    #ctx-submenu { position: fixed; z-index: 101; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 4px 12px var(--shadow); padding: 4px 0; min-width: 160px; display: none; color: var(--fg); }
+    #ctx-submenu .item { display: flex; align-items: center; gap: 8px; padding: 4px 12px; font-size: 12px; color: var(--fg); user-select: none; white-space: nowrap; }
+    #ctx-submenu .item:hover { background: var(--accent); color: var(--on-accent); }
+    #ctx-submenu .item.disabled { opacity: 0.4; }
+    /* Submenu-scoped clones of the main-menu affordances: .inert rows
+       stay un-highlighted, and .ctx-right-action buttons flush right
+       via margin-left:auto and show their own hover state without
+       painting the whole row. Without these rules, the default
+       .item:hover rule above would light up the whole SSH entry. */
+    #ctx-submenu .item.inert { cursor: default; }
+    #ctx-submenu .item.inert:hover { background: transparent; color: var(--fg); }
+    #ctx-submenu .item.has-right-action { padding-right: 6px; }
+    #ctx-submenu .ctx-right-action { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 2px; opacity: 0.85; }
+    #ctx-submenu .ctx-right-action-extra { margin-left: 4px; }
+    #ctx-submenu .ctx-right-action .ctx-ra-label { font-size: 11px; font-weight: 600; letter-spacing: 0.3px; }
+    #ctx-submenu .ctx-right-action svg { width: 12px; height: 12px; }
+    #ctx-submenu .ctx-right-action:hover { background: var(--hot); color: var(--on-hot); opacity: 1; }
+    /* Green-tinted right action (e.g. SSH "internal"/"external" run
+       buttons). Uses a fixed green that works across themes; hover
+       inverts to a solid green fill for a strong affordance. */
+    #ctx-submenu .ctx-right-action-green { color: #2ea043; opacity: 1; }
+    #ctx-submenu .ctx-right-action-green:hover { background: #2ea043; color: #fff; }
+    footer { display: flex; align-items: center; gap: 6px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+    footer::-webkit-scrollbar { height: 6px; }
+    footer::-webkit-scrollbar-thumb { background: var(--panel-active); border-radius: 3px; }
+    #shortcut-bar { display: flex; gap: 4px; flex: 0 0 auto; }
+    /* Right-side shortcut slot (F9 Ops Q). Sits after ops-progress so
+       it's the absolute rightmost thing on the footer. */
+    #shortcut-bar-right { display: flex; gap: 4px; flex: 0 0 auto; }
+    #stash-label { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--fg-dim); letter-spacing: 0.5px; flex: 0 0 auto; font-weight: 600; }
+    #stash-label svg.glyph { width: 20px; height: 20px; }
+    #stash-chips { display: flex; flex: 1 1 auto; gap: 4px; min-width: 220px; min-height: 28px; max-width: 70vw; align-items: center; border: 1px dashed var(--border-subtle); border-radius: 3px; padding: 2px 4px; overflow-x: auto; scrollbar-width: thin; }
+    #stash-chips::-webkit-scrollbar { height: 4px; }
+    #stash-chips::-webkit-scrollbar-thumb { background: var(--panel-active); border-radius: 2px; }
+    #stash-chips.drop-hover { border-color: var(--accent); background: var(--panel-active); }
+    #stash-chips .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 6px; background: var(--panel-active); border: 1px solid var(--border-subtle); border-radius: 3px; font-size: 11px; color: var(--fg); user-select: none; flex: 0 0 auto; line-height: 18px; }
+    #stash-chips .chip svg.glyph { width: 12px; height: 12px; flex: 0 0 auto; }
+    #stash-chips .chip.dir svg.glyph { color: var(--accent); }
+    #stash-chips .chip .x { font-size: 13px; opacity: 0.7; padding: 0 2px; }
+    #stash-chips .chip .x:hover { opacity: 1; color: var(--hot); }
+    #stash-chips .chip[draggable="true"] { cursor: default; }
+    #stash-chips .empty { color: var(--fg-dim); font-size: 11px; opacity: 0.7; padding: 0 4px; }
+    .list.drop-hover { outline: 2px dashed var(--accent); outline-offset: -2px; }
+    footer button { background: var(--panel-active); color: var(--fg); border: 1px solid var(--border); border-radius: 2px; padding: 3px 8px; font: inherit; font-size: 12px; display: inline-flex; gap: 6px; align-items: baseline; }
+    footer button:hover { background: var(--accent); color: var(--on-accent); }
+    footer button b { font-weight: 600; color: var(--accent); font-size: 11px; }
+    footer button:hover b { color: var(--on-accent); }
+    .list { flex: 1; overflow: auto; background: var(--bg); }
+    /* The [hidden] attribute sets display:none via the UA stylesheet,
+       but author rules that specify display (e.g. .col-hdr: grid) win
+       the cascade and re-enable the element. These overrides force
+       "hidden wins" when we toggle terminal vs. file views. */
+    .list[hidden], .col-hdr[hidden], .pane-toolbar[hidden], .path-row[hidden] { display: none !important; }
+    /* Tight column-gap (4px) so the type-icon cell sits close to the
+       name, and small right-padding (4px) so the last column isn't
+       visually far from the scrollbar. Left padding kept at 8px for
+       pane edge breathing room. */
+    .col-hdr { display: grid; gap: 4px; padding: 4px 4px 4px 8px; background: var(--tab-bar-bg); border-bottom: 1px solid var(--border-subtle); font-weight: 600; color: var(--fg-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; user-select: none; }
+    .col-hdr .cell.sortable { }
+    .col-hdr .cell.sortable:hover { color: var(--fg); }
+    .row { display: grid; gap: 4px; padding: 2px 4px 2px 8px; align-items: center; white-space: nowrap; user-select: none; color: var(--fg); }
+    .row:hover { background: var(--row-hover); }
+    .row.multi-selected { background: var(--hot); color: var(--on-hot); }
+    .row.multi-selected .cell.name { font-weight: 600; color: inherit; }
+    .row.multi-selected .cell.size, .row.multi-selected .cell.mtime { color: inherit; opacity: 0.8; }
+    .row.cursor { outline: 1px solid var(--accent); outline-offset: -1px; background: var(--row-selected); }
+    .row.cursor.multi-selected { background: var(--hot); outline-color: var(--on-hot); }
+    .row .cell.align-right, .col-hdr .cell.align-right { text-align: right; }
+    .row .cell.align-center, .col-hdr .cell.align-center { text-align: center; }
+    .row .cell.size, .row .cell.mtime { color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; }
+    .row .cell.name { overflow: hidden; text-overflow: ellipsis; }
+    .row.dir .cell.name { color: var(--accent); }
+    .row.multi-selected .cell.name, .row.cursor .cell.name, .row.cursor.multi-selected .cell.name { color: inherit; }
+    dialog { background: var(--panel); color: var(--fg); border: 1px solid var(--border); padding: 0; border-radius: 4px; }
+    /* Darker scrim so focused dialogs stand out against the panes
+       behind them. Default browser backdrop is typically very light. */
+    dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+    /* Upload dialog: indeterminate spinner (scp doesn't report
+       progress without parsing its stderr) + file list preview. */
+    .upload-spinner { width: 20px; height: 20px; border: 2px solid var(--border-subtle); border-top-color: var(--accent); border-radius: 50%; animation: upload-spin 0.8s linear infinite; flex: 0 0 auto; }
+    @keyframes upload-spin { to { transform: rotate(360deg); } }
+    .upload-files { list-style: none; padding: 0; margin: 10px 0 0 0; font-family: "Mononoki", ui-monospace, monospace; font-size: 11px; color: var(--fg-dim); max-height: 160px; overflow: auto; }
+    .upload-files li { padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    dialog input, dialog select { background: var(--input-bg); color: var(--fg); border: 1px solid var(--border); padding: 4px 6px; font: inherit; }
+    dialog input { width: 300px; }
+    dialog button { margin-left: 6px; background: var(--panel-active); color: var(--fg); border: 1px solid var(--border); padding: 4px 10px; font: inherit; }
+    dialog button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+    dialog .dialog-sep { width: 1px; align-self: stretch; background: var(--border-subtle); margin: 0 4px; min-height: 22px; }
+    /* Standardized dialog chrome — header (title + close ×) / body /
+       footer (action buttons, with any .cancel button auto-pushed to
+       the far right via margin-left: auto). Dialogs that opt into the
+       new chrome wrap their contents in .dlg-header / .dlg-body /
+       .dlg-footer blocks. */
+    dialog .dlg-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); background: var(--header-bg); font-size: 13px; font-weight: 600; color: var(--fg); border-radius: 4px 4px 0 0; }
+    dialog .dlg-header .dlg-x { width: 22px; height: 22px; border: 1px solid transparent; background: transparent; color: var(--fg-dim); border-radius: 3px; padding: 0; display: inline-flex; align-items: center; justify-content: center; margin: 0; }
+    dialog .dlg-header .dlg-x:hover { background: var(--hot); color: var(--on-hot); border-color: var(--hot); }
+    dialog .dlg-header .dlg-x svg.glyph { width: 12px; height: 12px; }
+    dialog .dlg-body { padding: 14px 16px; }
+    dialog .dlg-footer { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--border-subtle); }
+    /* Button placement convention:
+         other    → secondary actions, left-aligned
+         .cancel  → paired dismiss, immediately left of .primary
+         .primary → default affirmative action, always far-right
+       Only the FIRST right-group item carries margin-left:auto so
+       the two right buttons sit next to each other. When a .cancel
+       exists, it wins the auto and primary just flows right after
+       it; when there's no .cancel, primary takes the auto. */
+    dialog .dlg-footer .cancel  { order: 1; }
+    dialog .dlg-footer .primary { order: 2; }
+    dialog .dlg-footer:has(.cancel) .cancel { margin-left: auto; }
+    dialog .dlg-footer:not(:has(.cancel)) .primary { margin-left: auto; }
+    dialog .icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 4px; width: 26px; height: 26px; }
+    dialog .icon-btn svg { width: 14px; height: 14px; }
+    dialog button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+    dialog button svg.glyph { width: 12px; height: 12px; flex: 0 0 auto; }
+    header { display: flex; align-items: center; gap: 12px; }
+    header label { color: var(--fg-dim); user-select: none; font-size: 12px; }
+    header label input { margin-right: 4px; vertical-align: middle; }
+    header select { background: var(--input-bg); color: var(--fg); border: 1px solid var(--border); font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 2px; }
+    header .header-spacer { flex: 1 1 auto; }
+    header .header-btn { background: transparent; color: var(--fg); border: 1px solid transparent; border-radius: 3px; padding: 3px; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; }
+    header .header-btn:hover { background: var(--panel-active); border-color: var(--border-subtle); }
+    header .header-btn.toggle.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+    header .header-btn svg { width: 15px; height: 15px; }
+    .header-stash { display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex: 0 1 auto; }
+    .pane-toolbar { display: flex; gap: 2px; padding: 2px 4px; background: var(--tab-bar-bg); border-bottom: 1px solid var(--border-subtle); align-items: center; flex-wrap: wrap; }
+    .pane-toolbar .tool { background: transparent; color: var(--fg); border: 1px solid transparent; border-radius: 3px; padding: 4px; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; }
+    .pane-toolbar .tool:hover { background: var(--panel-active); border-color: var(--border-subtle); }
+    .pane-toolbar .tool.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+    .pane-toolbar .tool[disabled] { opacity: 0.35; cursor: default; }
+    .pane-toolbar .tool[disabled]:hover { background: transparent; border-color: transparent; }
+    .pane-toolbar .tool svg { width: 16px; height: 16px; display: block; }
+    .pane-toolbar .sep { width: 1px; align-self: stretch; background: var(--border-subtle); margin: 2px 4px; }
+    .pane-toolbar .spacer { flex: 1 1 auto; }
+    .filter-input { background: var(--input-bg); color: var(--fg); border: none; border-bottom: 1px solid var(--border-subtle); padding: 4px 10px; font: inherit; font-size: 12px; outline: none; }
+    .filter-input:focus { background: var(--input-bg-focus); }
+    /* Search row: input flex-grows; the Aa toggle + Go button sit on the
+       right. Hidden wrapper is the source of truth for visibility.
+       Buttons reuse the .tool active-style so "case on" reads as strongly
+       as the Filter/Hidden toolbar toggles above. */
+    .search-row { display: flex; align-items: center; background: var(--input-bg); border-bottom: 1px solid var(--border-subtle); padding-right: 2px; }
+    .search-row[hidden] { display: none; }
+    .search-row > input { flex: 1 1 auto; background: transparent; border: none; padding: 4px 10px; color: var(--fg); font: inherit; font-size: 12px; outline: none; }
+    .search-row > input:focus { background: var(--input-bg-focus); }
+    .search-row .tool { flex: 0 0 auto; background: transparent; color: var(--fg); border: 1px solid transparent; border-radius: 3px; padding: 0 6px; margin: 2px; display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 22px; font: inherit; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; cursor: pointer; user-select: none; }
+    .search-row .tool:hover { background: var(--panel-active); border-color: var(--border-subtle); }
+    .search-row .tool.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+    .search-row .tool svg { width: 14px; height: 14px; display: block; }
+    /* Truncate search results whose display name (relative path) is longer
+       than the Name column; rest is visible on hover via the title
+       attribute set when rendering the row. */
+    .row .search-relpath { overflow: hidden; text-overflow: ellipsis; }
+    /* .pane-body wraps the column header + file list + terminal host
+       so .term-host can use inset:0 to exactly overlay the content
+       area (no hardcoded chrome offset). position:relative anchors
+       the absolute term-host to this wrapper. */
+    .pane-body { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+    /* Terminal host never uses display:none — xterm's renderer goes
+       stale when its element has no layout box, and htop/vim/less on
+       re-reveal would paint corrupt diffs onto the empty canvas.
+       visibility:hidden + position:absolute keeps the layout live and
+       the renderer happy while the tab is inactive. */
+    .term-host { position: absolute; inset: 0; padding: 4px 6px; background: #000; z-index: 5; visibility: hidden; pointer-events: none; }
+    .term-host.active { visibility: visible; pointer-events: auto; }
+    /* Per-session wrapper: one xterm instance lives inside each. All
+       wrappers stack at the same spot; only the one whose tab is
+       active carries the `active` class and shows. visibility:hidden
+       (not display:none) keeps each xterm's renderer happy while in
+       the background. */
+    .term-wrap { position: absolute; inset: 0; visibility: hidden; pointer-events: none; display: flex; flex-direction: column; }
+    .term-wrap.active { visibility: visible; pointer-events: auto; }
+    .term-wrap .term-canvas { flex: 1 1 auto; min-height: 0; outline: none; }
+    .term-wrap .xterm-viewport::-webkit-scrollbar { width: 8px; }
+    .term-wrap .xterm-viewport::-webkit-scrollbar-thumb { background: var(--panel-active); border-radius: 3px; }
+    /* Banner overlays the terminal when the WebSocket drops or the
+       session ends. Kept flush at the bottom so the shell's last
+       output stays readable above it. */
+    .term-banner { flex: 0 0 auto; padding: 4px 8px; font: 600 11px/1.4 "Mononoki", monospace; color: var(--on-hot); background: var(--hot); text-align: center; letter-spacing: 0.5px; }
+  </style>
+  <link rel="stylesheet" href="/vendor/xterm/xterm.css">
+  <script src="/vendor/xterm/xterm.js"></script>
+  <script src="/vendor/xterm/xterm-addon-fit.js"></script>
+  <script src="/vendor/xterm/xterm-addon-webgl.js"></script>
+  <script src="/vendor/xterm/xterm-addon-unicode11.js"></script>
+  <script src="/vendor/xterm/xterm-addon-web-links.js"></script>
+</head>
+<body>
+  <header>
+    <!-- Left cluster: the STASH (saved-paths area) occupies the left
+         side of the header now. -->
+    <div class="header-stash">
+      <div id="stash-label"><svg class="glyph"><use href="#icon-stash"/></svg><span>STASH</span></div>
+      <div id="stash-chips"></div>
+    </div>
+    <span class="header-spacer"></span>
+    <!-- Right cluster: keyboard-grab toggle, then the connected dot,
+         then Settings (rightmost). -->
+    <button type="button" id="capture-keys-btn" class="header-btn toggle" title="Capture keys (off = shortcuts pass through to the browser)"><svg class="glyph"><use href="#icon-keyboard"/></svg></button>
+    <span id="status-dot" data-state="disconnected" title="Connecting…"></span>
+    <button type="button" id="settings-btn" class="header-btn" title="Commander Settings"><svg class="glyph"><use href="#icon-gear"/></svg></button>
+  </header>
+  <main>
+    <section class="pane active" data-pane="left">
+      <div class="tab-row">
+        <div class="tabs" id="tabs-left"></div>
+        <div class="new-tab-btn" id="tabs-overflow-left" title="All tabs"><svg class="glyph"><use href="#icon-list"/></svg></div>
+        <div class="new-tab-btn" id="new-tab-left" title="New Tab"><svg class="glyph"><use href="#icon-tab-new"/></svg></div>
+        <div class="bookmarks-btn" id="connections-left" title="Connections Manager"><svg class="glyph"><use href="#icon-globe"/></svg></div>
+        <div class="bookmarks-btn" id="bookmarks-left" title="Bookmarks"><svg class="glyph"><use href="#icon-bookmarks"/></svg></div>
+      </div>
+      <div class="path-row" id="path-row-left">
+        <div class="pane-header" id="hdr-left">—</div>
+        <button type="button" class="nav" id="nav-back-left"    title="Back (Alt+Left)"><svg class="glyph"><use href="#icon-arrow-left"/></svg></button>
+        <button type="button" class="nav" id="nav-forward-left" title="Forward (Alt+Right)"><svg class="glyph"><use href="#icon-arrow-right"/></svg></button>
+        <button type="button" class="nav" id="nav-up-left"      title="Up (Alt+Up)"><svg class="glyph"><use href="#icon-arrow-up"/></svg></button>
+        <button type="button" class="nav" id="nav-refresh-left" title="Refresh"><svg class="glyph"><use href="#icon-refresh"/></svg></button>
+      </div>
+      <div class="pane-toolbar" id="toolbar-left"></div>
+      <input class="filter-input" id="filter-left" placeholder="filter by name…" hidden>
+      <div class="search-row" id="search-row-left" hidden>
+        <input id="search-left" placeholder="exact name — use * or ? to widen · Enter to apply">
+        <button type="button" class="tool" id="search-go-left" title="Apply search (Enter)"><svg class="glyph"><use href="#icon-search"/></svg></button>
+        <button type="button" class="tool" id="search-case-left" title="Match case">Aa</button>
+      </div>
+      <div class="pane-body">
+        <div class="col-hdr" id="cols-left"></div>
+        <div class="list" id="list-left"></div>
+        <div class="term-host" id="term-left"></div>
+      </div>
+    </section>
+    <section class="pane" data-pane="right">
+      <div class="tab-row">
+        <div class="tabs" id="tabs-right"></div>
+        <div class="new-tab-btn" id="tabs-overflow-right" title="All tabs"><svg class="glyph"><use href="#icon-list"/></svg></div>
+        <div class="new-tab-btn" id="new-tab-right" title="New Tab"><svg class="glyph"><use href="#icon-tab-new"/></svg></div>
+        <div class="bookmarks-btn" id="connections-right" title="Connections Manager"><svg class="glyph"><use href="#icon-globe"/></svg></div>
+        <div class="bookmarks-btn" id="bookmarks-right" title="Bookmarks"><svg class="glyph"><use href="#icon-bookmarks"/></svg></div>
+      </div>
+      <div class="path-row" id="path-row-right">
+        <div class="pane-header" id="hdr-right">—</div>
+        <button type="button" class="nav" id="nav-back-right"    title="Back (Alt+Left)"><svg class="glyph"><use href="#icon-arrow-left"/></svg></button>
+        <button type="button" class="nav" id="nav-forward-right" title="Forward (Alt+Right)"><svg class="glyph"><use href="#icon-arrow-right"/></svg></button>
+        <button type="button" class="nav" id="nav-up-right"      title="Up (Alt+Up)"><svg class="glyph"><use href="#icon-arrow-up"/></svg></button>
+        <button type="button" class="nav" id="nav-refresh-right" title="Refresh"><svg class="glyph"><use href="#icon-refresh"/></svg></button>
+      </div>
+      <div class="pane-toolbar" id="toolbar-right"></div>
+      <input class="filter-input" id="filter-right" placeholder="filter by name…" hidden>
+      <div class="search-row" id="search-row-right" hidden>
+        <input id="search-right" placeholder="exact name — use * or ? to widen · Enter to apply">
+        <button type="button" class="tool" id="search-go-right" title="Apply search (Enter)"><svg class="glyph"><use href="#icon-search"/></svg></button>
+        <button type="button" class="tool" id="search-case-right" title="Match case">Aa</button>
+      </div>
+      <div class="pane-body">
+        <div class="col-hdr" id="cols-right"></div>
+        <div class="list" id="list-right"></div>
+        <div class="term-host" id="term-right"></div>
+      </div>
+    </section>
+  </main>
+  <footer id="shortcut-footer">
+    <div id="shortcut-bar"></div>
+    <span class="footer-spacer"></span>
+    <span id="ops-progress" class="ops-progress"></span>
+    <!-- F9 Ops Q lives here so it sits at the far right of the
+         footer, past the ops-progress readout. The builder below
+         routes that single shortcut to this slot instead of
+         shortcut-bar. -->
+    <div id="shortcut-bar-right"></div>
+  </footer>
+  <div id="ctx-menu"></div>
+  <div id="ctx-submenu"></div>
+  <dialog id="info-dialog">
+    <div class="dlg-header"><span>Info</span><button type="button" class="dlg-x" aria-label="Close"><svg class="glyph"><use href="#icon-close"/></svg></button></div>
+    <div class="dlg-body"><pre id="info-body" style="margin:0;font:inherit;font-size:12px;max-width:560px;white-space:pre-wrap;word-break:break-all"></pre></div>
+    <div class="dlg-footer">
+      <button type="button" id="info-close" class="primary">OK</button>
+    </div>
+  </dialog>
+  <dialog id="confirm-dialog">
+    <div class="dlg-header"><span>Confirm</span><button type="button" class="dlg-x" aria-label="Close"><svg class="glyph"><use href="#icon-close"/></svg></button></div>
+    <div class="dlg-body"><pre id="confirm-body" style="margin:0;font:inherit;font-size:12px;max-width:560px;white-space:pre-wrap;word-break:break-all"></pre></div>
+    <div class="dlg-footer">
+      <button type="button" id="confirm-ok" class="primary">OK</button>
+      <button type="button" id="confirm-cancel" class="cancel">Cancel</button>
+    </div>
+  </dialog>
+  <dialog id="input-dialog">
+    <div class="dlg-header"><span id="input-title">Input</span><button type="button" class="dlg-x" aria-label="Close"><svg class="glyph"><use href="#icon-close"/></svg></button></div>
+    <form id="input-form">
+      <div class="dlg-body" style="min-width:320px">
+        <input type="text" id="input-field" autocomplete="off" style="width:100%">
+      </div>
+      <div class="dlg-footer">
+        <button type="submit" class="primary">OK</button>
+        <button type="button" id="input-cancel" class="cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="drop-op-dialog">
+    <div class="dlg-header"><span>Drop</span><button type="button" class="dlg-x" aria-label="Close"><svg class="glyph"><use href="#icon-close"/></svg></button></div>
+    <div class="dlg-body"><pre id="drop-op-body" style="margin:0;font:inherit;font-size:12px;max-width:560px;white-space:pre-wrap;word-break:break-all"></pre></div>
+    <div class="dlg-footer">
+      <button type="button" id="drop-op-copy" class="primary">Copy</button>
+      <button type="button" id="drop-op-move">Move</button>
+      <button type="button" id="drop-op-queue-move">Move Q</button>
+      <button type="button" id="drop-op-queue-copy">Copy Q</button>
+      <button type="button" id="drop-op-cancel" class="cancel">Cancel</button>
+    </div>
+  </dialog>
+  <dialog id="settings-dialog">
+    <div class="dlg-header"><span>Settings</span><button type="button" class="dlg-x" aria-label="Close"><svg class="glyph"><use href="#icon-close"/></svg></button></div>
+    <div class="dlg-body">
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;min-width:380px">
+        <label for="theme-select" style="color:var(--fg-dim);font-size:12px">Theme</label>
+        <select id="theme-select">
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+          <option value="high-contrast-dark">High Contrast · Dark</option>
+          <option value="high-contrast-light">High Contrast · Light</option>
+        </select>
+        <label for="settings-viewer" style="color:var(--fg-dim);font-size:12px">Viewer (F3)</label>
+        <div style="display:flex;gap:4px;align-items:center">
+          <select id="settings-viewer" style="flex:1 1 auto"></select>
+          <button type="button" id="settings-viewer-add" class="icon-btn" title="Add viewer"><svg class="glyph"><use href="#icon-file-new"/></svg></button>
+          <button type="button" id="settings-viewer-del" class="icon-btn" title="Remove selected viewer"><svg class="glyph"><use href="#icon-trash"/></svg></button>
+        </div>
+        <label for="settings-editor" style="color:var(--fg-dim);font-size:12px">Editor (F4)</label>
+        <div style="display:flex;gap:4px;align-items:center">
+          <select id="settings-editor" style="flex:1 1 auto"></select>
+          <button type="button" id="settings-editor-add" class="icon-btn" title="Add editor"><svg class="glyph"><use href="#icon-file-new"/></svg></button>
+          <button type="button" id="settings-editor-del" class="icon-btn" title="Remove selected editor"><svg class="glyph"><use href="#icon-trash"/></svg></button>
+        </div>
+        <div style="grid-column:2;justify-self:start;display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="settings-dblclick-open" style="margin:0;width:13px;height:13px;flex:0 0 auto">
+          <label for="settings-dblclick-open" style="font-size:12px;cursor:pointer">Double-click opens file with the OS default application</label>
+        </div>
+      </div>
+    </div>
+    <div class="dlg-footer">
+      <button type="button" id="settings-close" class="primary">Close</button>
+    </div>
+  </dialog>
+  <dialog id="upload-dialog">
+    <div class="dlg-header"><span>Uploading</span></div>
+    <div class="dlg-body" style="min-width:360px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="upload-spinner"></div>
+        <div id="upload-dialog-msg">Transferring…</div>
+      </div>
+      <ul id="upload-dialog-files" class="upload-files"></ul>
+    </div>
+  </dialog>
+  <dialog id="overwrite-dialog">
+    <div class="dlg-header"><span>Overwrite?</span><button type="button" class="dlg-x" aria-label="Close"><svg class="glyph"><use href="#icon-close"/></svg></button></div>
+    <div class="dlg-body">
+      <pre id="overwrite-body" style="margin:0;font:inherit;font-size:12px;max-width:560px;white-space:pre-wrap;word-break:break-all"></pre>
+      <div id="overwrite-rename-row" style="margin-top:10px;display:none">
+        <label style="font-size:11px;color:var(--fg-dim);display:block;margin-bottom:4px">Rename to</label>
+        <input type="text" id="overwrite-rename-input" autocomplete="off">
+      </div>
+    </div>
+    <div class="dlg-footer">
+      <button type="button" id="overwrite-overwrite" class="primary">Overwrite</button>
+      <button type="button" id="overwrite-overwrite-all">Overwrite all</button>
+      <button type="button" id="overwrite-rename">Rename…</button>
+      <button type="button" id="overwrite-skip">Skip</button>
+      <button type="button" id="overwrite-skip-all">Skip all</button>
+      <button type="button" id="overwrite-cancel" class="cancel">Cancel</button>
+    </div>
+  </dialog>
+  <dialog id="op-confirm-dialog">
+    <div class="dlg-header"><span>Confirm</span><button type="button" class="dlg-x" aria-label="Close"><svg class="glyph"><use href="#icon-close"/></svg></button></div>
+    <div class="dlg-body"><pre id="op-confirm-body" style="margin:0;font:inherit;font-size:12px;max-width:560px;white-space:pre-wrap;word-break:break-all"></pre></div>
+    <div class="dlg-footer">
+      <button type="button" id="op-confirm-do" class="primary">OK</button>
+      <button type="button" id="op-confirm-queue">Queue</button>
+      <button type="button" id="op-confirm-cancel" class="cancel">Cancel</button>
+    </div>
+  </dialog>
+  <dialog id="ops-queue-dialog">
+    <div class="dlg-header"><span>Ops Q</span><button type="button" class="dlg-x" aria-label="Close"><svg class="glyph"><use href="#icon-close"/></svg></button></div>
+    <div class="dlg-body"><div id="ops-queue-body" style="min-width:420px;max-height:50vh;overflow:auto"></div></div>
+    <div class="dlg-footer">
+      <button type="button" id="ops-queue-run-all" title="Run all queued" style="min-width:72px"><svg class="glyph"><use href="#icon-play"/></svg> all</button>
+      <button type="button" id="ops-queue-close" class="primary">Close</button>
+    </div>
+  </dialog>
+  <dialog id="props-dialog">
+    <div class="dlg-header"><span>Properties</span><button type="button" class="dlg-x" aria-label="Close"><svg class="glyph"><use href="#icon-close"/></svg></button></div>
+    <div class="dlg-body"><pre id="props-body" style="margin:0;font:inherit;font-size:12px;max-width:560px;white-space:pre-wrap;word-break:break-all"></pre></div>
+    <div class="dlg-footer">
+      <button type="button" id="props-close" class="primary">Close</button>
+    </div>
+  </dialog>
+  <!-- Icon sprite placeholder. commander-web serves /icons.sprite.svg whose
+       contents come from internal/renderers/shared/icons/icons.go — the same
+       glyphs Fyne uses. app.js fetches and injects the sprite on boot so
+       <use href="#icon-..."/> references resolve. -->
+  <div id="icon-sprite" hidden></div>
+  <script src="app.js" type="module"></script>
+</body>
+</html>
