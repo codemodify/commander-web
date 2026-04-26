@@ -16,3 +16,7 @@ sudo systemctl daemon-reload && sudo systemctl enable commander-web && sudo syst
 - basically the Web Renderer for the `commanderd`
 - run `commander-web` manually or from system service as above
 - open with `chromium --app=http://127.0.0.1:50001` or similar
+
+
+# screens
+![](./screen.png)
